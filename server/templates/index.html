@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube → MP3</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f0f0f;
+      --surface:  #1a1a1a;
+      --border:   #2a2a2a;
+      --accent:   #e53935;
+      --accent2:  #ff6659;
+      --text:     #f0f0f0;
+      --muted:    #888;
+      --success:  #43a047;
+      --warn:     #fb8c00;
+      --radius:   10px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 80px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    header h1 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    header h1 span { color: var(--accent); }
+    header p { color: var(--muted); margin-top: 6px; font-size: 0.9rem; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 16px;
+    }
+
+    /* URL input row */
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+    #url-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.95rem;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #url-input:focus { border-color: var(--accent); }
+    #url-input::placeholder { color: var(--muted); }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 12px 20px;
+      transition: opacity 0.15s;
+    }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button:not(:disabled):hover { opacity: 0.88; }
+
+    #convert-btn {
+      background: var(--accent);
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    /* Progress */
+    #progress-section { display: none; margin-top: 20px; }
+    #progress-title {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin-bottom: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #progress-title strong { color: var(--text); }
+
+    .progress-bar-wrap {
+      background: var(--bg);
+      border-radius: 99px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    #status-label { font-weight: 600; }
+    #status-label.done   { color: var(--success); }
+    #status-label.error  { color: var(--warn); }
+
+    /* Settings */
+    .settings-toggle {
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.82rem;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      margin-top: 16px;
+      width: 100%;
+      text-align: left;
+    }
+    .settings-toggle:hover { color: var(--text); }
+    #settings-panel { display: none; margin-top: 12px; }
+    #settings-panel label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .settings-row {
+      display: flex;
+      gap: 8px;
+    }
+    #folder-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 0.88rem;
+      padding: 10px 12px;
+      outline: none;
+    }
+    #folder-input:focus { border-color: var(--accent); }
+    #save-folder-btn {
+      background: var(--border);
+      color: var(--text);
+      padding: 10px 16px;
+    }
+
+    .server-info {
+      margin-top: 14px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: var(--bg);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+    }
+    .server-info strong { color: var(--text); }
+    .server-info .copy-ip {
+      cursor: pointer;
+      background: var(--border);
+      color: var(--text);
+      border: none;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      margin-left: 8px;
+    }
+
+    /* History */
+    .section-title {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    #history-list { list-style: none; }
+    #history-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+    }
+    #history-list li:last-child { border-bottom: none; }
+    .hist-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+    .hist-icon.ok    { background: rgba(67,160,71,0.15); color: var(--success); }
+    .hist-icon.err   { background: rgba(251,140,0,0.15); color: var(--warn); }
+    .hist-icon.spin  { background: rgba(229,57,53,0.12); color: var(--accent); animation: spin 1.2s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .hist-info { flex: 1; min-width: 0; }
+    .hist-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+    .hist-meta { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+    #no-history { color: var(--muted); font-size: 0.88rem; text-align: center; padding: 16px 0; }
+
+    /* Notification toast */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      background: #333;
+      color: #fff;
+      padding: 10px 22px;
+      border-radius: 99px;
+      font-size: 0.88rem;
+      transition: transform 0.3s ease;
+      pointer-events: none;
+      z-index: 100;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>YouTube <span>→ MP3</span></h1>
+    <p>Paste a URL. Conversion starts automatically.</p>
+  </header>
+
+  <!-- Convert card -->
+  <div class="card">
+    <div class="input-row">
+      <input
+        id="url-input"
+        type="url"
+        placeholder="Paste YouTube URL here…"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button id="convert-btn">Convert</button>
+    </div>
+
+    <!-- Progress -->
+    <div id="progress-section">
+      <p id="progress-title">Waiting…</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-meta">
+        <span id="status-label">Queued</span>
+        <span id="progress-right"></span>
+      </div>
+    </div>
+
+    <!-- Settings toggle -->
+    <button class="settings-toggle" id="settings-toggle">⚙ Settings</button>
+    <div id="settings-panel">
+      <label>Output folder (where MP3s are saved)</label>
+      <div class="settings-row">
+        <input id="folder-input" type="text" value="{{ config.output_folder }}" />
+        <button id="save-folder-btn">Save</button>
+      </div>
+      <div class="server-info" id="server-info">
+        Loading server info…
+      </div>
+    </div>
+  </div>
+
+  <!-- History card -->
+  <div class="card">
+    <div class="section-title">Recent conversions</div>
+    <ul id="history-list"></ul>
+    <p id="no-history">No conversions yet.</p>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    // -----------------------------------------------------------------------
+    // State
+    // -----------------------------------------------------------------------
+    const urlInput     = document.getElementById("url-input");
+    const convertBtn   = document.getElementById("convert-btn");
+    const progressSec  = document.getElementById("progress-section");
+    const progressFill = document.getElementById("progress-fill");
+    const progressTitle= document.getElementById("progress-title");
+    const statusLabel  = document.getElementById("status-label");
+    const progressRight= document.getElementById("progress-right");
+    const historyList  = document.getElementById("history-list");
+    const noHistory    = document.getElementById("no-history");
+    const toast        = document.getElementById("toast");
+
+    let activeJobId = null;
+    let eventSource = null;
+    const history   = [];   // [{id, url, title, status, filename}]
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+    function showToast(msg, duration = 2800) {
+      toast.textContent = msg;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), duration);
+    }
+
+    function setProgress(pct, statusText, right = "") {
+      progressFill.style.width = pct + "%";
+      statusLabel.textContent  = statusText;
+      statusLabel.className    = "";
+      progressRight.textContent = right;
+    }
+
+    function setStatusDone()  { statusLabel.className = "done"; }
+    function setStatusError() { statusLabel.className = "error"; }
+
+    function formatBytes(b) {
+      if (b < 1024) return b + " B";
+      if (b < 1048576) return (b/1024).toFixed(1) + " KB";
+      return (b/1048576).toFixed(1) + " MB";
+    }
+
+    // -----------------------------------------------------------------------
+    // History rendering
+    // -----------------------------------------------------------------------
+    function renderHistory() {
+      historyList.innerHTML = "";
+      if (history.length === 0) {
+        noHistory.style.display = "";
+        return;
+      }
+      noHistory.style.display = "none";
+      history.slice().reverse().forEach(job => {
+        const li = document.createElement("li");
+        let iconClass = "spin";
+        let iconChar  = "↻";
+        if (job.status === "complete") { iconClass = "ok";  iconChar = "✓"; }
+        if (job.status === "error")    { iconClass = "err"; iconChar = "!"; }
+
+        li.innerHTML = `
+          <div class="hist-icon ${iconClass}">${iconChar}</div>
+          <div class="hist-info">
+            <div class="hist-name">${escHtml(job.title || job.url)}</div>
+            <div class="hist-meta">${job.status === "complete" ? escHtml(job.filename || "") : job.status}</div>
+          </div>`;
+        historyList.appendChild(li);
+      });
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function upsertHistory(job) {
+      const idx = history.findIndex(j => j.id === job.id);
+      if (idx >= 0) history[idx] = { ...history[idx], ...job };
+      else history.push(job);
+      renderHistory();
+    }
+
+    // -----------------------------------------------------------------------
+    // Conversion
+    // -----------------------------------------------------------------------
+    function startConvert(url) {
+      if (!url) { showToast("Paste a YouTube URL first."); return; }
+      if (activeJobId) { showToast("Already converting — please wait."); return; }
+
+      convertBtn.disabled = true;
+      progressSec.style.display = "";
+      setProgress(0, "Queued", "");
+      progressTitle.innerHTML = "Starting…";
+
+      fetch("/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) { handleError(null, data.error); return; }
+          activeJobId = data.job_id;
+          upsertHistory({ id: activeJobId, url, status: "queued", title: null, filename: null });
+          listenSSE(activeJobId);
+        })
+        .catch(err => handleError(null, err.message));
+    }
+
+    function listenSSE(jobId) {
+      if (eventSource) eventSource.close();
+      eventSource = new EventSource(`/stream/${jobId}`);
+
+      eventSource.onmessage = (e) => {
+        const ev = JSON.parse(e.data);
+
+        if (ev.type === "ping" || ev.type === "done") return;
+
+        if (ev.type === "title") {
+          const cnt = ev.count > 1 ? ` — ${ev.count} tracks` : "";
+          progressTitle.innerHTML = `<strong>${escHtml(ev.title)}</strong>${escHtml(cnt)}`;
+          upsertHistory({ id: jobId, title: ev.title });
+        }
+
+        if (ev.type === "progress") {
+          let label;
+          if (ev.track_total > 1) {
+            const trackNum  = ev.track_index || 1;
+            const trackOf   = ev.track_total;
+            const action    = ev.status === "converting" ? "Converting" : "Downloading";
+            label = `${action} track ${trackNum} of ${trackOf}…`;
+            if (ev.track_title) {
+              progressTitle.innerHTML = `<strong>${escHtml(ev.track_title)}</strong> <span style="color:var(--muted)">(${trackNum}/${trackOf})</span>`;
+            }
+          } else {
+            label = ev.status === "converting" ? "Converting to MP3…" : "Downloading…";
+          }
+          const right = ev.speed ? `${ev.speed}  ETA ${ev.eta}` : "";
+          setProgress(ev.progress, label, right);
+          upsertHistory({ id: jobId, status: ev.status });
+        }
+
+        if (ev.type === "complete") {
+          const saved = ev.count > 1 ? `${ev.count} tracks saved!` : `Saved: ${ev.filename}`;
+          setProgress(100, ev.count > 1 ? `${ev.count} tracks done!` : "Done!", "");
+          setStatusDone();
+          upsertHistory({ id: jobId, status: "complete", filename: ev.filename, title: ev.title });
+          showToast(saved);
+          convertBtn.disabled = false;
+          activeJobId = null;
+          eventSource.close();
+          urlInput.value = "";
+        }
+
+        if (ev.type === "error") {
+          handleError(jobId, ev.error);
+        }
+      };
+
+      eventSource.onerror = () => {
+        if (activeJobId) handleError(activeJobId, "Connection lost.");
+      };
+    }
+
+    function handleError(jobId, msg) {
+      setProgress(0, "Error", "");
+      setStatusError();
+      progressTitle.textContent = msg || "Unknown error";
+      convertBtn.disabled = false;
+      activeJobId = null;
+      if (jobId) upsertHistory({ id: jobId, status: "error", title: msg });
+      if (eventSource) { eventSource.close(); eventSource = null; }
+      showToast("Error: " + (msg || "Unknown"), 4000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Event listeners
+    // -----------------------------------------------------------------------
+    convertBtn.addEventListener("click", () => startConvert(urlInput.value.trim()));
+
+    urlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") startConvert(urlInput.value.trim());
+    });
+
+    // Auto-convert on paste
+    document.addEventListener("paste", (e) => {
+      const text = (e.clipboardData || window.clipboardData).getData("text");
+      if (text && (text.includes("youtube.com/") || text.includes("youtu.be/"))) {
+        urlInput.value = text;
+        startConvert(text.trim());
+      }
+    });
+
+    // Settings panel
+    document.getElementById("settings-toggle").addEventListener("click", function() {
+      const panel = document.getElementById("settings-panel");
+      const open = panel.style.display === "block";
+      panel.style.display = open ? "none" : "block";
+      this.textContent = open ? "⚙ Settings" : "⚙ Hide settings";
+      if (!open) loadServerInfo();
+    });
+
+    document.getElementById("save-folder-btn").addEventListener("click", () => {
+      const folder = document.getElementById("folder-input").value.trim();
+      if (!folder) return;
+      fetch("/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ output_folder: folder }),
+      })
+        .then(r => r.json())
+        .then(() => showToast("Output folder saved!"))
+        .catch(() => showToast("Failed to save folder."));
+    });
+
+    // -----------------------------------------------------------------------
+    // Server info (for phone app setup)
+    // -----------------------------------------------------------------------
+    function loadServerInfo() {
+      fetch("/info")
+        .then(r => r.json())
+        .then(info => {
+          const serverInfoEl = document.getElementById("server-info");
+          serverInfoEl.innerHTML = `
+            <div><strong>Phone app server address:</strong></div>
+            <div style="margin-top:6px">
+              <code id="ip-display">${escHtml(info.ip)}:${info.port}</code>
+              <button class="copy-ip" onclick="copyIP('${escHtml(info.ip)}:${info.port}')">Copy</button>
+            </div>
+            <div style="margin-top:6px;color:var(--muted)">
+              Enter this in the phone app Settings screen while on the same WiFi.
+            </div>`;
+        })
+        .catch(() => {
+          document.getElementById("server-info").textContent = "Could not load server info.";
+        });
+    }
+
+    function copyIP(text) {
+      navigator.clipboard.writeText(text)
+        .then(() => showToast("Copied!"))
+        .catch(() => showToast("Copy failed — select it manually."));
+    }
+
+    // -----------------------------------------------------------------------
+    // Load existing jobs on page load
+    // -----------------------------------------------------------------------
+    fetch("/jobs")
+      .then(r => r.json())
+      .then(jobs => {
+        jobs.slice(0, 20).forEach(j => {
+          upsertHistory({
+            id: j.id,
+            url: j.url,
+            title: j.title,
+            status: j.status,
+            filename: j.filename,
+          });
+        });
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "YT → MP3",
+    "slug": "yt-mp3",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "ytmp3",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourusername.ytmp3",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Used for audio playback",
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true
+      }
+    },
+    "android": {
+      "package": "com.yourusername.ytmp3",
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-av",
+      [
+        "expo-file-system",
+        {
+          "iCloudContainerEnvironment": "Production"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
