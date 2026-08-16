@@ -254,6 +254,11 @@
   <header>
     <h1>YouTube <span>→ MP3</span></h1>
     <p>Paste a URL. Conversion starts automatically.</p>
+    {% if config.cloud_mode %}
+    <p style="font-size:0.78rem;color:var(--success);margin-top:4px">
+      ☁ Cloud mode — files saved to Google Drive
+    </p>
+    {% endif %}
   </header>
 
   <!-- Convert card -->
@@ -284,11 +289,13 @@
     <!-- Settings toggle -->
     <button class="settings-toggle" id="settings-toggle">⚙ Settings</button>
     <div id="settings-panel">
+      {% if not config.cloud_mode %}
       <label>Output folder (where MP3s are saved)</label>
       <div class="settings-row">
         <input id="folder-input" type="text" value="{{ config.output_folder }}" />
         <button id="save-folder-btn">Save</button>
       </div>
+      {% endif %}
       <div class="server-info" id="server-info">
         Loading server info…
       </div>
@@ -365,11 +372,19 @@
         if (job.status === "complete") { iconClass = "ok";  iconChar = "✓"; }
         if (job.status === "error")    { iconClass = "err"; iconChar = "!"; }
 
+        const driveLinks = job.drive_links || [];
+        const driveHtml = driveLinks.length > 0
+          ? driveLinks.map(l => `<a href="${escHtml(l.download || l.view)}" target="_blank"
+              style="color:var(--accent);font-size:0.75rem;margin-right:8px">
+              ↓ ${escHtml(l.name)}</a>`).join("")
+          : (job.status === "complete" ? `<a href="/download/${encodeURIComponent(job.filename || '')}"
+              style="color:var(--accent);font-size:0.75rem">↓ Download</a>` : "");
+
         li.innerHTML = `
           <div class="hist-icon ${iconClass}">${iconChar}</div>
           <div class="hist-info">
             <div class="hist-name">${escHtml(job.title || job.url)}</div>
-            <div class="hist-meta">${job.status === "complete" ? escHtml(job.filename || "") : job.status}</div>
+            <div class="hist-meta">${job.status === "complete" ? driveHtml || escHtml(job.filename || "") : job.status}</div>
           </div>`;
         historyList.appendChild(li);
       });
@@ -450,7 +465,8 @@
           const saved = ev.count > 1 ? `${ev.count} tracks saved!` : `Saved: ${ev.filename}`;
           setProgress(100, ev.count > 1 ? `${ev.count} tracks done!` : "Done!", "");
           setStatusDone();
-          upsertHistory({ id: jobId, status: "complete", filename: ev.filename, title: ev.title });
+          upsertHistory({ id: jobId, status: "complete", filename: ev.filename,
+                          title: ev.title, drive_links: ev.drive_links || [] });
           showToast(saved);
           convertBtn.disabled = false;
           activeJobId = null;

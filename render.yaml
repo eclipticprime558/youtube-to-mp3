@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: youtube-to-mp3
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: CLOUD_MODE
+        value: "true"
+      - key: PORT
+        value: "10000"
+      - key: GDRIVE_FOLDER_ID
+        sync: false   # Set this in the Render dashboard
+      - key: GDRIVE_CREDENTIALS_JSON
+        sync: false   # Set this in the Render dashboard (paste the full JSON)

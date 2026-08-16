@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { listFiles, getDownloadUrl, RemoteFile } from "../api";
+import { listFiles, getDownloadUrl, listDriveFiles, RemoteFile, DriveFile } from "../api";
 
 const C = {
   bg:      "#0f0f0f",
@@ -26,22 +26,22 @@ interface LocalFile {
   size: number;
 }
 
-type Tab = "pc" | "downloaded";
+type Tab = "drive" | "downloaded";
 
 export default function LibraryScreen() {
-  const [tab, setTab]           = useState<Tab>("pc");
-  const [pcFiles, setPcFiles]   = useState<RemoteFile[]>([]);
+  const [tab, setTab]               = useState<Tab>("drive");
+  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
   const [localFiles, setLocalFiles] = useState<LocalFile[]>([]);
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading]       = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
 
-  const loadPcFiles = useCallback(async () => {
+  const loadDriveFiles = useCallback(async () => {
     try {
-      const files = await listFiles();
-      setPcFiles(files);
+      const files = await listDriveFiles();
+      setDriveFiles(files);
     } catch (e: any) {
-      Alert.alert("Connection error", e.message || "Could not reach PC server.");
+      Alert.alert("Connection error", e.message || "Could not reach server.");
     }
   }, []);
 
@@ -71,9 +71,9 @@ export default function LibraryScreen() {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadPcFiles(), loadLocalFiles()]);
+    await Promise.all([loadDriveFiles(), loadLocalFiles()]);
     setLoading(false);
-  }, [loadPcFiles, loadLocalFiles]);
+  }, [loadDriveFiles, loadLocalFiles]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -83,11 +83,11 @@ export default function LibraryScreen() {
 
   useEffect(() => { refresh(); }, []);
 
-  const downloadFile = async (filename: string) => {
+  const downloadFile = async (filename: string, sourceUrl?: string) => {
     setDownloading(filename);
     try {
       await FileSystem.makeDirectoryAsync(DOWNLOAD_DIR, { intermediates: true });
-      const url = await getDownloadUrl(filename);
+      const url = sourceUrl || await getDownloadUrl(filename);
       const dest = DOWNLOAD_DIR + filename;
       const existing = await FileSystem.getInfoAsync(dest);
       if (existing.exists) {
@@ -138,16 +138,18 @@ export default function LibraryScreen() {
     return new Date(ts * 1000).toLocaleDateString();
   }
 
-  const renderPcFile = ({ item }: { item: RemoteFile }) => (
+  const renderDriveFile = ({ item }: { item: DriveFile }) => (
     <View style={styles.fileRow}>
-      <View style={styles.fileIcon}><Text style={styles.fileIconText}>♪</Text></View>
+      <View style={[styles.fileIcon, { backgroundColor: "rgba(66,133,244,0.12)" }]}>
+        <Text style={[styles.fileIconText, { color: "#4285f4" }]}>♪</Text>
+      </View>
       <View style={styles.fileInfo}>
         <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.fileMeta}>{formatBytes(item.size)}  ·  {formatDate(item.modified)}</Text>
+        <Text style={styles.fileMeta}>{new Date(item.modifiedTime).toLocaleDateString()}  ·  Drive</Text>
       </View>
       <TouchableOpacity
         style={[styles.actionBtn, downloading === item.name && styles.actionBtnDisabled]}
-        onPress={() => downloadFile(item.name)}
+        onPress={() => downloadFile(item.name, item.webContentLink)}
         disabled={downloading === item.name}
       >
         {downloading === item.name
@@ -176,19 +178,19 @@ export default function LibraryScreen() {
     </View>
   );
 
-  const data = tab === "pc" ? pcFiles : localFiles;
-  const empty = tab === "pc"
-    ? "No MP3s found on PC yet.\nConvert a video first."
-    : "No files downloaded yet.\nDownload from the PC tab to play offline.";
+  const data = tab === "drive" ? driveFiles : localFiles;
+  const empty = tab === "drive"
+    ? "No MP3s in Google Drive yet.\nConvert a video first."
+    : "No files downloaded yet.\nDownload from the Drive tab to play offline.";
 
   return (
     <View style={styles.container}>
       {/* Tabs */}
       <View style={styles.tabBar}>
-        {(["pc", "downloaded"] as Tab[]).map(t => (
+        {(["drive", "downloaded"] as Tab[]).map(t => (
           <TouchableOpacity key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => setTab(t)}>
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === "pc" ? `On PC  (${pcFiles.length})` : `Downloaded  (${localFiles.length})`}
+              {t === "drive" ? `Drive  (${driveFiles.length})` : `Downloaded  (${localFiles.length})`}
             </Text>
           </TouchableOpacity>
         ))}
@@ -199,7 +201,7 @@ export default function LibraryScreen() {
       <FlatList
         data={data as any[]}
         keyExtractor={(item) => item.name}
-        renderItem={tab === "pc" ? renderPcFile as any : renderLocalFile as any}
+        renderItem={tab === "drive" ? renderDriveFile as any : renderLocalFile as any}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} />}
         ListEmptyComponent={

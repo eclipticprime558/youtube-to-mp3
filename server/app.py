@@ -5,6 +5,8 @@ import queue
 import threading
 import subprocess
 import sys
+import time
+import tempfile
 import mutagen.id3
 from pathlib import Path
 
@@ -14,6 +16,73 @@ import yt_dlp
 
 app = Flask(__name__)
 CORS(app)
+
+# ---------------------------------------------------------------------------
+# Cloud / environment config
+# ---------------------------------------------------------------------------
+
+CLOUD_MODE          = os.getenv("CLOUD_MODE", "false").lower() == "true"
+PORT                = int(os.getenv("PORT", 5000))
+GDRIVE_FOLDER_ID    = os.getenv("GDRIVE_FOLDER_ID", "")
+GDRIVE_CREDS_JSON   = os.getenv("GDRIVE_CREDENTIALS_JSON", "")
+
+# In cloud mode use a shared temp dir; local mode uses config.json path
+if CLOUD_MODE:
+    _CLOUD_TEMP_DIR = tempfile.mkdtemp(prefix="ytmp3_")
+    # Background thread: delete files older than 2 hours
+    def _cleanup_loop():
+        while True:
+            time.sleep(3600)
+            cutoff = time.time() - 7200
+            for fname in os.listdir(_CLOUD_TEMP_DIR):
+                fpath = os.path.join(_CLOUD_TEMP_DIR, fname)
+                try:
+                    if os.path.getmtime(fpath) < cutoff:
+                        os.remove(fpath)
+                except Exception:
+                    pass
+    threading.Thread(target=_cleanup_loop, daemon=True).start()
+else:
+    _CLOUD_TEMP_DIR = None
+
+# ---------------------------------------------------------------------------
+# Google Drive helpers
+# ---------------------------------------------------------------------------
+
+def _drive_service():
+    if not GDRIVE_FOLDER_ID or not GDRIVE_CREDS_JSON:
+        return None
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        creds = service_account.Credentials.from_service_account_info(
+            json.loads(GDRIVE_CREDS_JSON),
+            scopes=["https://www.googleapis.com/auth/drive.file"],
+        )
+        return build("drive", "v3", credentials=creds)
+    except Exception as e:
+        print(f"Drive auth error: {e}")
+        return None
+
+
+def _upload_to_drive(filepath: str) -> dict | None:
+    svc = _drive_service()
+    if not svc:
+        return None
+    try:
+        from googleapiclient.http import MediaFileUpload
+        filename = os.path.basename(filepath)
+        meta = {"name": filename, "parents": [GDRIVE_FOLDER_ID]}
+        media = MediaFileUpload(filepath, mimetype="audio/mpeg", resumable=True)
+        result = svc.files().create(
+            body=meta, media_body=media,
+            fields="id,name,webViewLink,webContentLink",
+        ).execute()
+        print(f"Uploaded to Drive: {filename} -> {result.get('id')}")
+        return result
+    except Exception as e:
+        print(f"Drive upload failed: {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +132,8 @@ DEFAULT_CONFIG = {
 
 
 def load_config() -> dict:
+    if CLOUD_MODE:
+        return {**DEFAULT_CONFIG, "output_folder": _CLOUD_TEMP_DIR}
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, encoding="utf-8") as f:
             return {**DEFAULT_CONFIG, **json.load(f)}
@@ -236,13 +307,28 @@ def _convert_worker(job_id: str, url: str, output_folder: str) -> None:
 
         first = new_mp3s[0] if new_mp3s else None
 
-        job.update(status="complete", progress=100, filename=first, filenames=new_mp3s)
+        # Upload to Google Drive if configured
+        drive_links = []
+        for fname in new_mp3s:
+            fpath = os.path.join(output_folder, fname)
+            result = _upload_to_drive(fpath)
+            if result:
+                drive_links.append({
+                    "name": fname,
+                    "id": result.get("id"),
+                    "view": result.get("webViewLink"),
+                    "download": result.get("webContentLink"),
+                })
+
+        job.update(status="complete", progress=100, filename=first,
+                   filenames=new_mp3s, drive_links=drive_links)
         _push(job_id, {
             "type": "complete",
             "title": title,
             "filename": first,
             "filenames": new_mp3s,
             "count": len(new_mp3s),
+            "drive_links": drive_links,
         })
 
     except yt_dlp.utils.DownloadError as e:
@@ -265,6 +351,7 @@ def _convert_worker(job_id: str, url: str, output_folder: str) -> None:
 @app.route("/")
 def index():
     config = load_config()
+    config["cloud_mode"] = CLOUD_MODE
     return render_template("index.html", config=config)
 
 
@@ -390,6 +477,8 @@ def get_config():
 
 @app.route("/config", methods=["POST"])
 def update_config():
+    if CLOUD_MODE:
+        return jsonify({"error": "Config is read-only in cloud mode"}), 403
     data = request.get_json(silent=True) or {}
     config = load_config()
     if "output_folder" in data:
@@ -398,6 +487,30 @@ def update_config():
         config["port"] = int(data["port"])
     save_config(config)
     return jsonify(config)
+
+
+@app.route("/gdrive-files")
+def gdrive_files():
+    """List MP3s stored in the configured Google Drive folder."""
+    if not GDRIVE_FOLDER_ID or not GDRIVE_CREDS_JSON:
+        return jsonify([])
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        creds = service_account.Credentials.from_service_account_info(
+            json.loads(GDRIVE_CREDS_JSON),
+            scopes=["https://www.googleapis.com/auth/drive.readonly"],
+        )
+        svc = build("drive", "v3", credentials=creds)
+        results = svc.files().list(
+            q=f"'{GDRIVE_FOLDER_ID}' in parents and trashed=false",
+            fields="files(id,name,size,modifiedTime,webViewLink,webContentLink)",
+            orderBy="modifiedTime desc",
+            pageSize=200,
+        ).execute()
+        return jsonify(results.get("files", []))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +541,7 @@ def info():
 
 if __name__ == "__main__":
     config = load_config()
-    port = config.get("port", 5000)
+    port = PORT if CLOUD_MODE else config.get("port", 5000)
     output_folder = config["output_folder"]
 
     ffmpeg_ok = FFMPEG_LOCATION is not None or _find_ffmpeg() is None
@@ -445,5 +558,6 @@ if __name__ == "__main__":
     print("=" * 55)
     print()
 
-    os.makedirs(output_folder, exist_ok=True)
+    if not CLOUD_MODE:
+        os.makedirs(output_folder, exist_ok=True)
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

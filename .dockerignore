@@ -1,0 +1,7 @@
+mobile/
+mobile/node_modules/
+.git/
+*.log
+server/config.json
+__pycache__/
+*.pyc

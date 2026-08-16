@@ -92,6 +92,23 @@ export async function checkServer(): Promise<{ name: string; ip: string; port: n
   return res.json();
 }
 
+export interface DriveFile {
+  id: string;
+  name: string;
+  size?: string;
+  modifiedTime: string;
+  webViewLink: string;
+  webContentLink: string;
+}
+
+export async function listDriveFiles(): Promise<DriveFile[]> {
+  const config = await getServerConfig();
+  const res = await fetch(`${baseUrl(config)}/gdrive-files`);
+  const data = await res.json();
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
 // ─── SSE polling fallback (React Native has no EventSource) ──────────────────
 // We poll /status every second while in-progress.
 
